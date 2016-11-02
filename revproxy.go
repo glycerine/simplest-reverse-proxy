@@ -76,20 +76,37 @@ func makeRevProxy(target *url.URL, of io.WriteCloser) *ReverseProxy {
 				fmt.Printf("\n>>>>>>>> director function called. copying request %v\n",
 					reqNum)
 
-				two := bytes.SplitN(dump, []byte("\n\n"), 2)
+				two := bytes.SplitN(dump, []byte("\r\n\r\n"), 2)
 				prettyDone := false
+				//fmt.Printf("len two = %v\n", len(two))
+				if len(two) > 0 {
+					//fmt.Printf("two[0]: %#v\n", string(two[0]))
+					//fmt.Printf("two[1]: %#v\n", two[1])
+				}
 				if len(two) == 2 {
+					of.Write(two[0])
+					of.Write([]byte("\n\n"))
+
+					lines := bytes.SplitN(two[1], []byte("\n"), -1)
+
 					// pretty
 					var buf bytes.Buffer
-					jsErr := json.Indent(&buf, two[1], "", "   ")
-					if jsErr == nil {
-						of.Write(buf.Bytes())
-						prettyDone = true
+					n := len(lines) - 1
+					for i := 0; i < n; i++ {
+						fmt.Printf("\njson payload line %v:\n", i)
+						buf.Reset()
+						jsErr := json.Indent(&buf, lines[i], "", "   ")
+						if jsErr == nil {
+							of.Write(buf.Bytes())
+							prettyDone = true
+						} else {
+							fmt.Printf("\njson err: '%v'\n", jsErr)
+						}
 					}
 				}
 				if !prettyDone {
 					// ugly
-					of.Write(dump)
+					of.Write(two[1])
 				}
 
 				fmt.Printf("\n>>>>>>>>> done writing request %v\n", reqNum)
