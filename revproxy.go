@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -74,7 +75,23 @@ func makeRevProxy(target *url.URL, of io.WriteCloser) *ReverseProxy {
 				p.interesting = true
 				fmt.Printf("\n>>>>>>>> director function called. copying request %v\n",
 					reqNum)
-				of.Write(dump)
+
+				two := bytes.SplitN(dump, []byte("\n\n"), 2)
+				prettyDone := false
+				if len(two) == 2 {
+					// pretty
+					var buf bytes.Buffer
+					jsErr := json.Indent(&buf, two[1], "", "   ")
+					if jsErr == nil {
+						of.Write(buf.Bytes())
+						prettyDone = true
+					}
+				}
+				if !prettyDone {
+					// ugly
+					of.Write(dump)
+				}
+
 				fmt.Printf("\n>>>>>>>>> done writing request %v\n", reqNum)
 			} else {
 				p.interesting = false
@@ -362,9 +379,23 @@ func (p *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
 	}
 
 	if p.interesting {
-		fmt.Fprintf(p.of, "\n<<<<<<<<<<<<< Response:\n")
-		w := io.MultiWriter(p.of, dst)
+		fmt.Fprintf(p.of, "\n<<<<<<<<<<<<< Response:")
+
+		var ugly bytes.Buffer
+		var pretty bytes.Buffer
+
+		w := io.MultiWriter(&ugly, dst)
 		io.CopyBuffer(w, src, buf)
+
+		// prettify and print
+		jsErr := json.Indent(&pretty, ugly.Bytes(), "", "   ")
+		if jsErr == nil {
+			fmt.Fprintf(p.of, " pretty\n")
+			p.of.Write(pretty.Bytes())
+		} else {
+			fmt.Fprintf(p.of, " ugly\n")
+			p.of.Write(ugly.Bytes())
+		}
 	} else {
 		io.CopyBuffer(dst, src, buf)
 	}
